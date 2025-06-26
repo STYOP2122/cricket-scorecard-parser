@@ -4,7 +4,8 @@ services:
     env: python
     plan: free
     buildCommand: |
-      apt-get update && apt-get install -y chromium chromium-driver
+      apt-get update
+      apt-get install -y chromium-browser chromium-chromedriver
       pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     envVars:
