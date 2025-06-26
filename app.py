@@ -1,10 +1,11 @@
 from flask import Flask, request, render_template_string
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import time
 import re
-import tempfile
+import  
 
 app = Flask(__name__)
 
@@ -35,11 +36,11 @@ def fetch_page(url):
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("user-agent=Mozilla/5.0")
+    options.binary_location = "/usr/bin/chromium"  # путь к chromium на Render
 
-    temp_dir = tempfile.mkdtemp()
-    options.add_argument(f"--user-data-dir={temp_dir}")
+    service = Service("/usr/bin/chromedriver")  # путь к chromedriver
 
-    driver = webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(service=service, options=options)
     driver.get(url)
     time.sleep(5)
     soup = BeautifulSoup(driver.page_source, "html.parser")
