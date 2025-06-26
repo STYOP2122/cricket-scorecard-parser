@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cricket Match Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .input-container {
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .results {
+            margin-top: 30px;
+        }
+        .team-section {
+            margin-bottom: 30px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .error {
+            color: red;
+        }
+        .loading {
+            display: none;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cricket Match Analyzer</h1>
+    <p>Enter a link to the match scorecard on ESPN Cricinfo</p>
+    <p>Example: https://www.espncricinfo.com/series/.../full-scorecard</p>
+    
+    <div class="input-container">
+        <input type="text" id="urlInput" placeholder="Enter scorecard URL">
+        <button onclick="analyzeMatch()">Analyze</button>
+    </div>
+    
+    <div id="loading" class="loading">
+        Loading and analyzing data...
+    </div>
+    
+    <div id="error" class="error"></div>
+    
+    <div id="results" class="results"></div>
+    
+    <script>
+        function analyzeMatch() {
+            const url = document.getElementById('urlInput').value.trim();
+            const errorDiv = document.getElementById('error');
+            const resultsDiv = document.getElementById('results');
+            const loadingDiv = document.getElementById('loading');
+            
+            errorDiv.textContent = '';
+            resultsDiv.innerHTML = '';
+            loadingDiv.style.display = 'block';
+            
+            fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `url=${encodeURIComponent(url)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingDiv.style.display = 'none';
+                
+                if (data.error) {
+                    errorDiv.textContent = data.error;
+                    return;
+                }
+                
+                // Display overall stats
+                let html = '<h2>Overall Statistics</h2>';
+                html += `<p><strong>🏆 Top Batter(s):</strong> ${formatPlayers(data.top_batter, 'runs')}</p>`;
+                html += `<p><strong>🎯 Top Bowler(s):</strong> ${formatBowlers(data.top_bowler)}</p>`;
+                html += `<p><strong>💥 Most 4s:</strong> ${formatPlayers(data.most_fours, '4s')}</p>`;
+                html += `<p><strong>💣 Most 6s:</strong> ${formatPlayers(data.most_sixes, '6s')}</p>`;
+                
+                // Display team stats
+                for (const [team, stats] of Object.entries(data.by_team)) {
+                    html += `<div class="team-section"><h3>${team}</h3>`;
+                    html += `<p><strong>Top Batter(s):</strong> ${formatPlayers(stats.top_batter, 'runs')}</p>`;
+                    html += `<p><strong>Top Bowler(s):</strong> ${formatBowlers(stats.top_bowler)}</p>`;
+                    html += `<p><strong>Most 4s:</strong> ${formatPlayers(stats.most_fours, '4s')}</p>`;
+                    html += `<p><strong>Most 6s:</strong> ${formatPlayers(stats.most_sixes, '6s')}</p>`;
+                    html += '</div>';
+                }
+                
+                resultsDiv.innerHTML = html;
+            })
+            .catch(error => {
+                loadingDiv.style.display = 'none';
+                errorDiv.textContent = 'An error occurred: ' + error.message;
+            });
+        }
+        
+        function formatPlayers(players, statKey) {
+            if (!players || players.length === 0) return 'N/A';
+            const names = players.map(p => p.name);
+            const statValue = players[0][statKey];
+            const statName = statKey === 'runs' ? 'runs' : 
+                           statKey === '4s' ? 'fours' : 'sixes';
+            return `${names.join(' and ')} (${statValue} ${statName})`;
+        }
+        
+        function formatBowlers(bowlers) {
+            if (!bowlers || bowlers.length === 0) return 'N/A';
+            const names = bowlers.map(b => b.name);
+            const wickets = bowlers[0].wickets;
+            const runs = bowlers[0].runs;
+            return `${names.join(' and ')} (${wickets}/${runs})`;
+        }
+    </script>
+</body>
+</html>

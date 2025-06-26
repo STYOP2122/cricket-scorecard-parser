@@ -1,47 +1,34 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, render_template, request, jsonify
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import time
 import re
 
 app = Flask(__name__)
 
-HTML = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Cricket Scorecard Parser</title>
-</head>
-<body>
-    <h2>Cricket Scorecard Parser</h2>
-    <form method="post">
-        <input name="url" size="80" placeholder="https://www.espncricinfo.com/.../full-scorecard" required>
-        <button type="submit">Analyze</button>
-    </form>
-    <pre>{{ result }}</pre>
-</body>
-</html>
-'''
-
 def validate_url(url):
     pattern = r'^https://www\.espncricinfo\.com/series/.*/full-scorecard$'
     return re.match(pattern, url) is not None
 
 def fetch_page(url):
+    from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
+    from selenium.webdriver.chrome.options import Options
+
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("user-agent=Mozilla/5.0")
-    options.binary_location = "/usr/bin/chromium"  # путь к chromium на Render
 
-    service = Service("/usr/bin/chromedriver")  # путь к chromedriver
-
+    # Используем webdriver-manager для автоматической загрузки драйвера
+    service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
+    
     driver.get(url)
     time.sleep(5)
+
     soup = BeautifulSoup(driver.page_source, "html.parser")
     driver.quit()
     return soup
@@ -56,20 +43,22 @@ def parse_scorecard(soup):
             continue
         title = title_tag.text.strip()
         team = title.split(" Innings")[0]
-
+        
         bat_table = inn.find("table", class_="ds-w-full")
         if not bat_table:
             continue
-
+            
         batters = []
         bat_rows = bat_table.find_all("tr")[1:]
         for row in bat_rows:
             cols = row.find_all("td")
             if len(cols) < 8:
                 continue
+                
             try:
                 name_span = cols[0].find("span", class_="ds-inline-flex")
                 name = name_span.text.strip() if name_span else cols[0].text.strip()
+                
                 batters.append({
                     'name': name,
                     'runs': int(cols[2].text.strip()),
@@ -85,10 +74,11 @@ def parse_scorecard(soup):
     for i, (team, info) in enumerate(data.items()):
         next_inn_index = (i + 1) % len(data)
         next_inn = innings[next_inn_index]
+        
         bowl_table = next_inn.find("table", class_="ds-w-full")
         if bowl_table:
             bowl_table = bowl_table.find_next("table", class_="ds-w-full")
-
+            
         if bowl_table:
             bowlers = []
             bowl_rows = bowl_table.find_all("tr")[1:]
@@ -96,9 +86,11 @@ def parse_scorecard(soup):
                 cols = row.find_all("td")
                 if len(cols) < 8:
                     continue
+                    
                 try:
                     name_span = cols[0].find("span", class_="ds-inline-flex")
                     name = name_span.text.strip() if name_span else cols[0].text.strip()
+                    
                     bowlers.append({
                         'name': name,
                         'wickets': int(cols[4].text.strip()),
@@ -106,10 +98,11 @@ def parse_scorecard(soup):
                     })
                 except (ValueError, AttributeError):
                     continue
+            
             info['bowlers'] = bowlers
 
     return data
-
+    
 def find_top_batters(batters):
     if not batters:
         return []
@@ -139,6 +132,7 @@ def find_most_sixes(batters):
 def analyze(data):
     all_batters = []
     all_bowlers = []
+    
     for team, info in data.items():
         all_batters.extend(info['batters'])
         all_bowlers.extend(info['bowlers'])
@@ -153,11 +147,19 @@ def analyze(data):
 
     by_team = {}
     for team, info in data.items():
+        team_batters = info['batters']
+        team_bowlers = info['bowlers']
+        
+        tb = find_top_batters(team_batters)
+        tw = find_top_bowlers(team_bowlers)
+        mf = find_most_fours(team_batters)
+        ms = find_most_sixes(team_batters)
+        
         by_team[team] = {
-            'top_batter': find_top_batters(info['batters']),
-            'top_bowler': find_top_bowlers(info['bowlers']),
-            'most_fours': find_most_fours(info['batters']),
-            'most_sixes': find_most_sixes(info['batters']),
+            'top_batter': tb,
+            'top_bowler': tw,
+            'most_fours': mf,
+            'most_sixes': ms
         }
 
     return {
@@ -168,60 +170,29 @@ def analyze(data):
         'by_team': by_team
     }
 
-def format_players(players):
-    if not players:
-        return "N/A"
-    names = [p['name'] for p in players]
-    return " and ".join(names) + f" ({players[0]['runs']} runs)"
-
-def format_bowlers(bowlers):
-    if not bowlers:
-        return "N/A"
-    names = [b['name'] for b in bowlers]
-    return " and ".join(names) + f" ({bowlers[0]['wickets']}/{bowlers[0]['runs']})"
-
-def format_fours(players):
-    if not players:
-        return "N/A"
-    names = [p['name'] for p in players]
-    return " and ".join(names) + f" ({players[0]['4s']} fours)"
-
-def format_sixes(players):
-    if not players:
-        return "N/A"
-    names = [p['name'] for p in players]
-    return " and ".join(names) + f" ({players[0]['6s']} sixes)"
-
-@app.route("/", methods=["GET", "POST"])
+@app.route('/')
 def index():
-    result = ""
-    if request.method == "POST":
-        url = request.form.get("url")
-        if not validate_url(url):
-            result = "❌ Invalid URL. Must end with /full-scorecard"
-        else:
-            try:
-                soup = fetch_page(url)
-                data = parse_scorecard(soup)
-                stats = analyze(data)
+    return render_template('index.html')
 
-                if not stats:
-                    result = "❌ Could not extract data. Try another link."
-                else:
-                    result += f"🏆 Top batters: {format_players(stats['top_batter'])}\n"
-                    result += f"🎯 Top bowlers: {format_bowlers(stats['top_bowler'])}\n"
-                    result += f"💥 Most 4s: {format_fours(stats['most_fours'])}\n"
-                    result += f"💣 Most 6s: {format_sixes(stats['most_sixes'])}\n"
+@app.route('/analyze', methods=['POST'])
+def analyze_url():
+    url = request.form.get('url')
+    
+    if not validate_url(url):
+        return jsonify({'error': 'Invalid URL format'}), 400
+    
+    try:
+        soup = fetch_page(url)
+        data = parse_scorecard(soup)
+        stats = analyze(data)
+        
+        if not stats:
+            return jsonify({'error': 'No data found on the page'}), 400
+            
+        return jsonify(stats)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-                    for team, vals in stats['by_team'].items():
-                        result += f"\n--- {team} ---\n"
-                        result += f"Top batters: {format_players(vals['top_batter'])}\n"
-                        result += f"Top bowlers: {format_bowlers(vals['top_bowler'])}\n"
-                        result += f"Most 4s: {format_fours(vals['most_fours'])}\n"
-                        result += f"Most 6s: {format_sixes(vals['most_sixes'])}\n"
-            except Exception as e:
-                result = f"❌ Error: {str(e)}"
-    return render_template_string(HTML, result=result)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
