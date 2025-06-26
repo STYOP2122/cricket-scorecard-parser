@@ -4,6 +4,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import time
 import re
+import tempfile
 
 app = Flask(__name__)
 
@@ -34,6 +35,10 @@ def fetch_page(url):
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("user-agent=Mozilla/5.0")
+
+    temp_dir = tempfile.mkdtemp()
+    options.add_argument(f"--user-data-dir={temp_dir}")
+
     driver = webdriver.Chrome(options=options)
     driver.get(url)
     time.sleep(5)
