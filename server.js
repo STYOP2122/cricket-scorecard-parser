@@ -26,10 +26,10 @@ app.get('/api/scrape', async (req, res) => {
 
 async function scrapeESPN(url) {
     const browser = await puppeteer.launch({
-        executablePath: puppeteer.executablePath(),  // путь к скачанному браузеру
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
+
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.64 Safari/537.36');
 
