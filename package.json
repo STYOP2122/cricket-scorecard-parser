@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "postinstall": "PUPPETEER_CACHE_DIR=/tmp/.cache/puppeteer npx puppeteer install chrome"
+    "postinstall": "npx puppeteer install"
   },
   "repository": {
     "type": "git",
