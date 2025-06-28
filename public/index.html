@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cricket Stats Scraper</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    h1 { text-align: center; color: #2c3e50; }
+    .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .panel {
+      background: white; padding: 15px;
+      border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td {
+      padding: 10px; text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th { background-color: #3498db; color: white; }
+    .controls { text-align: center; margin: 20px 0; }
+    button {
+      padding: 10px 20px; background-color: #3498db;
+      color: white; border: none; border-radius: 4px; cursor: pointer;
+    }
+    .url-input {
+      width: 80%; padding: 10px;
+      margin: 10px 0; border: 1px solid #ddd; border-radius: 4px;
+    }
+    .error { color: red; text-align: center; margin: 10px 0; }
+    .team-header {
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 5px;
+    }
+    ul#topList {
+      list-style-type: none;
+      padding-left: 0;
+    }
+    ul#topList li {
+      padding: 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Cricket Stats Scraper</h1>
+
+  <div class="controls">
+    <input type="text" id="matchUrl" class="url-input"
+      placeholder="https://www.espncricinfo.com/series/.../full-scorecard">
+    <button onclick="scrapeData()">Load Data</button>
+  </div>
+
+  <div id="errorMessage" class="error"></div>
+
+  <div class="panel">
+    <h2 class="team-header">Top Performers</h2>
+    <ul id="topList"></ul>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <h2 class="team-header" id="team1Header">Team 1 Batters</h2>
+      <table id="team1Batters">
+        <thead>
+          <tr><th>Player</th><th>Runs</th><th>4s</th><th>6s</th><th>SR</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2 class="team-header" id="team2Header">Team 2 Batters</h2>
+      <table id="team2Batters">
+        <thead>
+          <tr><th>Player</th><th>Runs</th><th>4s</th><th>6s</th><th>SR</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2 class="team-header" id="team1BowlersHeader">Team 1 Bowlers</h2>
+      <table id="team1Bowlers">
+        <thead>
+          <tr><th>Player</th><th>Overs</th><th>Wickets</th><th>Runs</th><th>Econ</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2 class="team-header" id="team2BowlersHeader">Team 2 Bowlers</h2>
+      <table id="team2Bowlers">
+        <thead>
+          <tr><th>Player</th><th>Overs</th><th>Wickets</th><th>Runs</th><th>Econ</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    function parseNumber(v) {
+      return Number(v) || 0;
+    }
+
+    function enrichBatters(batters) {
+      return batters.map(b => ({
+        ...b,
+        sr: (parseNumber(b.runs) * 100).toFixed(1)
+      }));
+    }
+
+    function enrichBowlers(bowlers) {
+      return bowlers.map(b => {
+        const overs = 4;
+        const runs = parseNumber(b.runs);
+        return {
+          ...b,
+          overs,
+          runsConceded: runs,
+          economy: (runs / overs).toFixed(2)
+        };
+      });
+    }
+
+    function getTopBatters(players) {
+      const maxRuns = Math.max(...players.map(p => parseNumber(p.runs)));
+      const topPlayers = players.filter(p => parseNumber(p.runs) === maxRuns);
+      return { players: topPlayers, stat: `${maxRuns} runs` };
+    }
+
+    function getTopSixOrFour(players, key) {
+      const max = Math.max(...players.map(p => parseNumber(p[key])));
+      const topPlayers = players.filter(p => parseNumber(p[key]) === max);
+      return { players: topPlayers, stat: `${max} ${key}` };
+    }
+
+    function getTopBowlers(players) {
+      const maxWickets = Math.max(...players.map(p => parseNumber(p.wickets)));
+      const filtered = players.filter(p => parseNumber(p.wickets) === maxWickets);
+
+      if (filtered.length === 1) return { players: filtered, stat: `${maxWickets} wickets` };
+
+      const minRuns = Math.min(...filtered.map(p => parseNumber(p.runsConceded)));
+      const topFiltered = filtered.filter(p => parseNumber(p.runsConceded) === minRuns);
+      return {
+        players: topFiltered,
+        stat: `${maxWickets} wickets, ${minRuns} runs`
+      };
+    }
+
+    function formatNames(players) {
+      if (!players || players.length === 0) return 'N/A';
+      return players.map(p => p.player).join(' and ');
+    }
+
+    async function scrapeData() {
+      const url = document.getElementById('matchUrl').value;
+      if (!url) return showError('Please enter a match URL!');
+      try {
+        showError('Loading...');
+        const res = await fetch(`http://localhost:3000/api/scrape?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        data.team1Batters = enrichBatters(data.team1Batters);
+        data.team2Batters = enrichBatters(data.team2Batters);
+        data.team1Bowlers = enrichBowlers(data.team1Bowlers);
+        data.team2Bowlers = enrichBowlers(data.team2Bowlers);
+
+        const topTeam1 = getTopBatters(data.team1Batters);
+        const topTeam2 = getTopBatters(data.team2Batters);
+        const overallTopBatters = getTopBatters([...topTeam1.players, ...topTeam2.players]);
+
+        const mostSixTeam1 = getTopSixOrFour(data.team1Batters, 'sixes');
+        const mostSixTeam2 = getTopSixOrFour(data.team2Batters, 'sixes');
+        const mostSixOverall = getTopSixOrFour([...data.team1Batters, ...data.team2Batters], 'sixes');
+
+        const mostFourTeam1 = getTopSixOrFour(data.team1Batters, 'fours');
+        const mostFourTeam2 = getTopSixOrFour(data.team2Batters, 'fours');
+        const mostFourOverall = getTopSixOrFour([...data.team1Batters, ...data.team2Batters], 'fours');
+
+        const topBowlerTeam1 = getTopBowlers(data.team1Bowlers);
+        const topBowlerTeam2 = getTopBowlers(data.team2Bowlers);
+        const topBowlerOverall = getTopBowlers([...data.team1Bowlers, ...data.team2Bowlers]);
+
+        data.topBatter = overallTopBatters;
+        data.topBatterTeam1 = topTeam1;
+        data.topBatterTeam2 = topTeam2;
+        data.mostSixes = mostSixOverall;
+        data.mostSixesTeam1 = mostSixTeam1;
+        data.mostSixesTeam2 = mostSixTeam2;
+        data.mostFours = mostFourOverall;
+        data.mostFoursTeam1 = mostFourTeam1;
+        data.mostFoursTeam2 = mostFourTeam2;
+        data.topBowler = topBowlerOverall;
+        data.topBowlerTeam1 = topBowlerTeam1;
+        data.topBowlerTeam2 = topBowlerTeam2;
+
+        displayData(data);
+        showError('');
+      } catch (err) {
+        showError('Error: ' + err.message);
+      }
+    }
+
+    function displayData(data) {
+      document.getElementById('team1Header').textContent = `${data.teams.team1} Batters`;
+      document.getElementById('team2Header').textContent = `${data.teams.team2} Batters`;
+      document.getElementById('team1BowlersHeader').textContent = `${data.teams.team1} Bowlers`;
+      document.getElementById('team2BowlersHeader').textContent = `${data.teams.team2} Bowlers`;
+
+      const topList = document.getElementById('topList');
+      topList.innerHTML = `
+        <li><strong>Top Batter:</strong> ${formatNames(data.topBatter.players)} (${data.topBatter.stat})</li>
+        <li><strong>Top Batter ${data.teams.team1}:</strong> ${formatNames(data.topBatterTeam1.players)} (${data.topBatterTeam1.stat})</li>
+        <li><strong>Top Batter ${data.teams.team2}:</strong> ${formatNames(data.topBatterTeam2.players)} (${data.topBatterTeam2.stat})</li>
+
+        <li><strong>Top Bowler:</strong> ${formatNames(data.topBowler.players)} (${data.topBowler.stat})</li>
+        <li><strong>Top Bowler ${data.teams.team1}:</strong> ${formatNames(data.topBowlerTeam1.players)} (${data.topBowlerTeam1.stat})</li>
+        <li><strong>Top Bowler ${data.teams.team2}:</strong> ${formatNames(data.topBowlerTeam2.players)} (${data.topBowlerTeam2.stat})</li>
+
+        <li><strong>Player to score most sixes:</strong> ${formatNames(data.mostSixes.players)} (${data.mostSixes.stat})</li>
+        <li><strong>Player to score most sixes ${data.teams.team1}:</strong> ${formatNames(data.mostSixesTeam1.players)} (${data.mostSixesTeam1.stat})</li>
+        <li><strong>Player to score most sixes ${data.teams.team2}:</strong> ${formatNames(data.mostSixesTeam2.players)} (${data.mostSixesTeam2.stat})</li>
+
+        <li><strong>Player to score most fours:</strong> ${formatNames(data.mostFours.players)} (${data.mostFours.stat})</li>
+        <li><strong>Player to score most fours ${data.teams.team1}:</strong> ${formatNames(data.mostFoursTeam1.players)} (${data.mostFoursTeam1.stat})</li>
+        <li><strong>Player to score most fours ${data.teams.team2}:</strong> ${formatNames(data.mostFoursTeam2.players)} (${data.mostFoursTeam2.stat})</li>
+      `;
+
+      displayTable('#team1Batters', data.team1Batters, ['player', 'runs', 'fours', 'sixes', 'sr']);
+      displayTable('#team2Batters', data.team2Batters, ['player', 'runs', 'fours', 'sixes', 'sr']);
+      displayTable('#team1Bowlers', data.team1Bowlers, ['player', 'overs', 'wickets', 'runsConceded', 'economy']);
+      displayTable('#team2Bowlers', data.team2Bowlers, ['player', 'overs', 'wickets', 'runsConceded', 'economy']);
+    }
+
+    function displayTable(selector, data, columns) {
+      const tbody = document.querySelector(`${selector} tbody`);
+      tbody.innerHTML = data.map(row =>
+        `<tr>${columns.map(col => `<td>${row[col] || '0'}</td>`).join('')}</tr>`
+      ).join('');
+    }
+
+    function showError(message) {
+      document.getElementById('errorMessage').textContent = message;
+    }
+  </script>
+</body>
+</html>
