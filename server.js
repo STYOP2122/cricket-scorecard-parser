@@ -7,7 +7,6 @@ const app = express();
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// API endpoint
 app.get('/api/scrape', async (req, res) => {
     try {
         const { url } = req.query;
@@ -47,7 +46,6 @@ async function scrapeESPN(url) {
             const rows = table.querySelectorAll('tbody tr');
 
             rows.forEach(row => {
-                // Пропускаем скрытые строки с деталями викетов
                 if (row.classList.contains('ds-hidden')) return;
 
                 const cells = row.querySelectorAll('td');
@@ -66,7 +64,6 @@ async function scrapeESPN(url) {
                     player.fours = cells[5]?.textContent?.trim();
                     player.sixes = cells[6]?.textContent?.trim();
                 } else {
-                    // Корректное извлечение викетов
                     const wicketsCell = cells[4];
                     let wickets = '0';
 
@@ -98,11 +95,10 @@ async function scrapeESPN(url) {
         const team1 = teamHeaders[0]?.textContent?.trim() || 'Team 1';
         const team2 = teamHeaders[1]?.textContent?.trim() || 'Team 2';
 
-        // Правильное распределение таблиц
         const team1Batters = parsePlayers(tables[0], team1);
-        const team2Bowlers = parsePlayers(tables[1], team2, true); // <-- этот был неправильно как team1
+        const team2Bowlers = parsePlayers(tables[1], team2, true);
         const team2Batters = parsePlayers(tables[2], team2);
-        const team1Bowlers = parsePlayers(tables[3], team1, true); // <-- этот был неправильно как team2
+        const team1Bowlers = parsePlayers(tables[3], team1, true);
 
 
         return {
